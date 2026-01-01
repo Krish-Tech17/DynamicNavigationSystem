@@ -148,26 +148,45 @@ public class PathGroup : MonoBehaviour  // This script creates the waypoint grap
 
     }
 
-    // to assign and runtime exit or destination
+   
+
     public void SetNewExit(Waypoint newExit)
     {
         if (newExit == null) return;
 
-        // remove old exit connections
-        foreach (var wp in loopWaypoints)
-            wp.neighbors.Remove(exitWaypoint);
-
         exitWaypoint = newExit;
 
-        // rebuild full graph with new exit included
+        // ensure new exit is added to waypoints list
+        if (!pathfinder.allWaypoints.Contains(newExit))
+            pathfinder.allWaypoints.Add(newExit);
+
+        // rebuild graph including new exit
         BuildGraph();
 
-        // update to pathfinder
-        pathfinder.allWaypoints.Clear();
-        pathfinder.allWaypoints.AddRange(loopWaypoints);
-        pathfinder.allWaypoints.Add(exitWaypoint);
-
-        Debug.Log($"Exit changed to: {exitWaypoint.name}");
+        Debug.Log("Exit changed dynamically → " + newExit.name);
     }
+
+    private void EnsureExitHasConnections(Waypoint exitWp)
+    {
+        // Find nearest 2 valid waypoints (fast)
+        List<Waypoint> list = new List<Waypoint>(pathfinder.allWaypoints);
+        list.Remove(exitWp);
+
+        list.Sort((a, b) =>
+            Vector3.Distance(exitWp.transform.position, a.transform.position)
+            .CompareTo(Vector3.Distance(exitWp.transform.position, b.transform.position))
+        );
+
+        for (int i = 0; i < Mathf.Min(2, list.Count); i++)
+        {
+            if (!exitWp.neighbors.Contains(list[i]))
+                exitWp.neighbors.Add(list[i]);
+
+            if (!list[i].neighbors.Contains(exitWp))
+                list[i].neighbors.Add(exitWp);
+        }
+    }
+
+
 
 }

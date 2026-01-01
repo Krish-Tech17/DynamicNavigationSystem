@@ -34,6 +34,32 @@ public class GuidedPathRenderer : MonoBehaviour // Makes the path visible in the
 
     public float DistancePublicref;
 
+    public bool navigationActive = false;
+
+
+        //for VR performance optimization
+        public float recalcDistanceThreshold = 2.0f; // distance before reroute
+        public float recalcInterval = 4.0f;          // seconds between optional checks
+        private float recalcTimer = 0f;
+        private Waypoint lastNearest;
+
+
+    // TO Be called to initiate Navigation
+    public void StartNavigationTo(Waypoint target)
+    {
+        exitWaypoint = target;
+        navigationActive = true;
+        RecalculatePath();
+    }
+
+    // OPTIONAL STOP
+    public void StopNavigation()
+    {
+        navigationActive = false;
+        line.positionCount = 0;
+    }
+
+
     void Awake()
     {
         line = GetComponent<LineRenderer>();
@@ -50,25 +76,45 @@ public class GuidedPathRenderer : MonoBehaviour // Makes the path visible in the
 
     void Update()
     {
+        if (!navigationActive) return;
+
         UpdateScroll();
 
+        recalcTimer += Time.deltaTime;
+
         Waypoint nearest = GetClosestWaypoint();
-        if (nearest == null) return;
+
+        bool shouldRecalc =
+            nearest != lastNearest ||              // player moved to new waypoint region
+            recalcTimer > recalcInterval;          // timed refresh fallback
+
+        if (shouldRecalc)
+        {
+            RecalculatePath();
+            lastNearest = nearest;
+            recalcTimer = 0;
+
+            // Render only when recalculation happens
+            RenderPath(CurrentPath);
+        }
+
+        AdvanceWaypointIfReached();
+    }
+
+
+    public void RecalculatePath()
+    {
+        Waypoint nearest = GetClosestWaypoint();
+        if (nearest == null || exitWaypoint == null) return;
 
         var newPath = pathfinder.GetShortestPath(nearest, exitWaypoint);
 
-        // Only update if path changed
-        if (CurrentPath == null || PathChanged(newPath))
-        {
-            CurrentPath = newPath;
-            CurrentNextIndex = 0;
-        }
-
-        RenderPath(CurrentPath);
-
-        // REQUIRED FOR NAVIGATION MONITOR TO WORK
-        AdvanceWaypointIfReached();
+        CurrentPath = newPath;
+        CurrentNextIndex = 0;
     }
+
+
+
 
     bool PathChanged(List<Waypoint> newPath)
     {
@@ -183,8 +229,17 @@ public class GuidedPathRenderer : MonoBehaviour // Makes the path visible in the
         float dist = Vector3.Distance(player.position, CurrentPath[CurrentNextIndex].transform.position);
 
         if (dist < radius)
+        {
             CurrentNextIndex++;
+
+            // Only rebuild when nearing end OR when path deviation detected
+            if (CurrentNextIndex < CurrentPath.Count - 1)
+                return;
+
+            RecalculatePath();  // optional: only if dynamic rerouting is needed
+        }
     }
+
 
     public void ForceRecalculate()
     {
