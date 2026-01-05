@@ -6,6 +6,10 @@ public class NavigationArrowController : MonoBehaviour
     public GuidedPathRenderer renderer;
     public DirectionArrow arrow;
 
+
+    [Header("Arrow Lookahead")]
+    public int lookAheadCount = 3; // how many waypoints ahead to aim at
+
     void Start()
     {
         if (!monitor) monitor = FindAnyObjectByType<NavigationMonitor>();
@@ -36,34 +40,23 @@ public class NavigationArrowController : MonoBehaviour
 
     void UpdateArrowTarget()
     {
-        if (renderer.CurrentPath == null || renderer.CurrentPath.Count < 1)
-            return;
+        
+            if (renderer.CurrentPath == null || renderer.CurrentPath.Count < 1)
+                return;
 
-        int idx = renderer.CurrentNextIndex;
-        int count = renderer.CurrentPath.Count;
+            int idx = renderer.CurrentNextIndex;
+            int count = renderer.CurrentPath.Count;
 
-        Transform player = renderer.player;
-        Transform wpCurrent = renderer.CurrentPath[idx].transform;
+            Transform player = renderer.player;
 
-        float dist = Vector3.Distance(player.position, wpCurrent.position);
+            // ---------- NEW LOGIC: LOOK AHEAD N WAYPOINTS ----------
+            int targetIndex = Mathf.Min(idx + lookAheadCount, count - 1);
 
-        // ⭐ LOOKAHEAD #1 — if close to current waypoint → use next waypoint
-        if (dist < 1.0f && idx < count - 1)
-        {
-            idx++;
-        }
+    
 
-        // ⭐ LOOKAHEAD #2 — if VERY close → use next+1 waypoint
-        if (idx < count - 2)
-        {
-            Transform wpNext = renderer.CurrentPath[idx].transform;
-            float dist2 = Vector3.Distance(player.position, wpNext.position);
+            arrow.SetTarget(renderer.CurrentPath[targetIndex].transform);
 
-            if (dist2 < 0.5f)
-                idx++;
-        }
+        
 
-        // ⭐ Assign final target
-        arrow.SetTarget(renderer.CurrentPath[idx].transform);
     }
 }

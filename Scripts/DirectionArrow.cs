@@ -9,15 +9,22 @@ public class DirectionArrow : MonoBehaviour
     [Header("Arrow Settings")]
     public float heightOffset = 1.5f;
     public float rotateSpeed = 5f;
+    public float forwardOffset = 0.6f; //  forward/backward distance
+
 
     void Update()
     {
         if (player == null || target == null) return;
 
-        // Position arrow above player
+        // Base position above player
         Vector3 pos = player.position;
         pos.y += heightOffset;
+
+        // ⭐ Push arrow forward/backward relative to player's facing direction
+        pos += player.forward * forwardOffset;
+
         transform.position = pos;
+
 
         // Rotation logic (Y-axis only)
         Vector3 dir = target.position - transform.position;
