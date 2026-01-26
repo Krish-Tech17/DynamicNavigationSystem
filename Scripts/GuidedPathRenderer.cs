@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 
 [RequireComponent(typeof(LineRenderer))]
-public class GuidedPathRenderer : MonoBehaviour // Makes the path visible in the VR world Vizulation
+public class GuidedPathRenderer : MonoBehaviour
 {
     [Header("Path Settings")]
     public Transform player;
@@ -14,37 +14,33 @@ public class GuidedPathRenderer : MonoBehaviour // Makes the path visible in the
     public float lineWidth = 0.15f;
 
     [Header("Scrolling & Orientation")]
-    public float scrollSpeed = 2f;
-    public float textureScale = 1f;
+    public float scrollSpeed = 2f;   // meters per second
+    public float textureScale = 1f;  // keep for tuning
     public bool invertScrollDirection = false;
     public bool rotateTexture90 = false;
     public bool flipTextureHorizontal = false;
     public bool flipTextureVertical = false;
 
-    private LineRenderer line;
-    private Material runtimeMat;
     [Header("Texture Scaling")]
-    [Tooltip("Controls how large the arrow appears on the line.")]
+    [Tooltip("World size of one arrow (meters)")]
     public float arrowSize = 1f;
 
+    private LineRenderer line;
+    private Material runtimeMat;
+    private float cachedPathLength = 1f;
 
     public List<Waypoint> CurrentPath { get; private set; }
     public int CurrentNextIndex { get; private set; } = 0;
 
-
     public float DistancePublicref;
-
     public bool navigationActive = false;
 
+    public float recalcInterval = 4.0f;
+    private float recalcTimer = 0f;
+    private Waypoint lastNearest;
 
-        //for VR performance optimization
-        public float recalcDistanceThreshold = 2.0f; // distance before reroute
-        public float recalcInterval = 4.0f;          // seconds between optional checks
-        private float recalcTimer = 0f;
-        private Waypoint lastNearest;
+    // ----------------------------
 
-
-    // TO Be called to initiate Navigation
     public void StartNavigationTo(Waypoint target)
     {
         exitWaypoint = target;
@@ -52,13 +48,11 @@ public class GuidedPathRenderer : MonoBehaviour // Makes the path visible in the
         RecalculatePath();
     }
 
-    // OPTIONAL STOP
     public void StopNavigation()
     {
         navigationActive = false;
         line.positionCount = 0;
     }
-
 
     void Awake()
     {
@@ -67,7 +61,6 @@ public class GuidedPathRenderer : MonoBehaviour // Makes the path visible in the
         line.alignment = LineAlignment.TransformZ;
         line.widthMultiplier = lineWidth;
 
-        // clone material
         runtimeMat = Instantiate(line.material);
         line.material = runtimeMat;
 
@@ -81,79 +74,42 @@ public class GuidedPathRenderer : MonoBehaviour // Makes the path visible in the
         UpdateScroll();
 
         recalcTimer += Time.deltaTime;
-
         Waypoint nearest = GetClosestWaypoint();
 
-        bool shouldRecalc =
-            nearest != lastNearest ||              // player moved to new waypoint region
-            recalcTimer > recalcInterval;          // timed refresh fallback
-
-        if (shouldRecalc)
+        if (nearest != lastNearest || recalcTimer > recalcInterval)
         {
             RecalculatePath();
             lastNearest = nearest;
-            recalcTimer = 0;
-
-            // Render only when recalculation happens
+            recalcTimer = 0f;
             RenderPath(CurrentPath);
         }
 
         AdvanceWaypointIfReached();
     }
 
-
     public void RecalculatePath()
     {
         Waypoint nearest = GetClosestWaypoint();
         if (nearest == null || exitWaypoint == null) return;
 
-        var newPath = pathfinder.GetShortestPath(nearest, exitWaypoint);
-
-        CurrentPath = newPath;
+        CurrentPath = pathfinder.GetShortestPath(nearest, exitWaypoint);
         CurrentNextIndex = 0;
     }
 
-
-
-
-    bool PathChanged(List<Waypoint> newPath)
-    {
-        if (CurrentPath == null || newPath.Count != CurrentPath.Count)
-            return true;
-
-        for (int i = 0; i < newPath.Count; i++)
-            if (newPath[i] != CurrentPath[i]) return true;
-
-        return false;
-    }
-
-
-    void ApplyTextureOrientation()
-    {
-        Vector2 scale = runtimeMat.mainTextureScale;
-
-        // Flip
-        scale.x *= flipTextureHorizontal ? -1f : 1f;
-        scale.y *= flipTextureVertical ? -1f : 1f;
-
-        // Rotate 90 degrees swap axes
-        if (rotateTexture90)
-            runtimeMat.mainTextureScale = new Vector2(scale.y, scale.x);
-        else
-            runtimeMat.mainTextureScale = scale;
-    }
+    // ---------------------------- FIXED PART ----------------------------
 
     void UpdateScroll()
     {
-        if (runtimeMat == null) return;
+        if (runtimeMat == null || cachedPathLength <= 0.01f) return;
 
         float direction = invertScrollDirection ? -1f : 1f;
-        float offset = Time.time * scrollSpeed * direction;
 
-        if (rotateTexture90)
-            runtimeMat.mainTextureOffset = new Vector2(0, offset);
-        else
-            runtimeMat.mainTextureOffset = new Vector2(offset, 0);
+        // 🔹 CONSTANT SPEED (meters/sec → texture space)
+        float offset = (Time.time * scrollSpeed / arrowSize) * direction;
+
+        runtimeMat.mainTextureOffset = rotateTexture90
+            ? new Vector2(0, offset)
+            : new Vector2(offset, 0);
     }
 
     void RenderPath(List<Waypoint> path)
@@ -166,7 +122,7 @@ public class GuidedPathRenderer : MonoBehaviour // Makes the path visible in the
 
         line.positionCount = path.Count;
 
-        float totalDist = 0;
+        float totalDist = 0f;
 
         for (int i = 0; i < path.Count; i++)
         {
@@ -175,19 +131,39 @@ public class GuidedPathRenderer : MonoBehaviour // Makes the path visible in the
             line.SetPosition(i, pos);
 
             if (i > 0)
-                totalDist += Vector3.Distance(path[i].transform.position, path[i - 1].transform.position);
+                totalDist += Vector3.Distance(
+                    path[i].transform.position,
+                    path[i - 1].transform.position
+                );
 
             DistancePublicref = totalDist;
         }
 
-        // dynamic tiling based on path length
-        // Dynamic tiling (arrow size control)
-        float tileRepeat = Mathf.Max(0.1f, totalDist * textureScale / arrowSize);
-        runtimeMat.mainTextureScale = rotateTexture90 ? new Vector2(1, tileRepeat) : new Vector2(tileRepeat, 1);
+        cachedPathLength = Mathf.Max(0.01f, totalDist);
 
-        ApplyTextureOrientation(); // ensure changes update live
+        // 🔹 CONSTANT ARROW SIZE (no distance distortion)
+        float tileRepeat = cachedPathLength / arrowSize;
 
+        runtimeMat.mainTextureScale = rotateTexture90
+            ? new Vector2(1, tileRepeat)
+            : new Vector2(tileRepeat, 1);
+
+        ApplyTextureOrientation();
         line.widthMultiplier = lineWidth;
+    }
+
+    // ----------------------------
+
+    void ApplyTextureOrientation()
+    {
+        Vector2 scale = runtimeMat.mainTextureScale;
+
+        scale.x *= flipTextureHorizontal ? -1f : 1f;
+        scale.y *= flipTextureVertical ? -1f : 1f;
+
+        runtimeMat.mainTextureScale = rotateTexture90
+            ? new Vector2(scale.y, scale.x)
+            : scale;
     }
 
     Waypoint GetClosestWaypoint()
@@ -198,6 +174,7 @@ public class GuidedPathRenderer : MonoBehaviour // Makes the path visible in the
         foreach (var wp in pathfinder.allWaypoints)
         {
             if (wp.blocked) continue;
+
             float d = Vector3.Distance(player.position, wp.transform.position);
             if (d < best)
             {
@@ -208,17 +185,12 @@ public class GuidedPathRenderer : MonoBehaviour // Makes the path visible in the
         return closest;
     }
 
-
-
-    //helper for wrong Direction
     public Vector3 GetNextTargetPosition()
     {
         if (CurrentPath == null || CurrentPath.Count < 2)
             return player.position;
 
-        // Ensure index is valid
         CurrentNextIndex = Mathf.Clamp(CurrentNextIndex, 0, CurrentPath.Count - 1);
-
         return CurrentPath[CurrentNextIndex].transform.position;
     }
 
@@ -226,25 +198,17 @@ public class GuidedPathRenderer : MonoBehaviour // Makes the path visible in the
     {
         if (CurrentPath == null || CurrentNextIndex >= CurrentPath.Count - 1) return;
 
-        float dist = Vector3.Distance(player.position, CurrentPath[CurrentNextIndex].transform.position);
+        float dist = Vector3.Distance(
+            player.position,
+            CurrentPath[CurrentNextIndex].transform.position
+        );
 
         if (dist < radius)
-        {
             CurrentNextIndex++;
-
-            // Only rebuild when nearing end OR when path deviation detected
-            if (CurrentNextIndex < CurrentPath.Count - 1)
-                return;
-
-            RecalculatePath();  // optional: only if dynamic rerouting is needed
-        }
     }
-
 
     public void ForceRecalculate()
     {
-        CurrentPath = null; // clear cached path so Update recomputes next frame
+        CurrentPath = null;
     }
-
-
 }
