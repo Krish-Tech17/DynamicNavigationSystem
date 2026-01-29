@@ -61,6 +61,9 @@ public class GuidedPathRenderer : MonoBehaviour
         line.alignment = LineAlignment.TransformZ;
         line.widthMultiplier = lineWidth;
 
+        //  CRITICAL
+        line.textureMode = LineTextureMode.RepeatPerSegment;
+
         runtimeMat = Instantiate(line.material);
         line.material = runtimeMat;
 
@@ -98,19 +101,23 @@ public class GuidedPathRenderer : MonoBehaviour
 
     // ---------------------------- FIXED PART ----------------------------
 
+
+    private float scrollOffset = 0f;
+
     void UpdateScroll()
     {
-        if (runtimeMat == null || cachedPathLength <= 0.01f) return;
+        if (runtimeMat == null) return;
 
         float direction = invertScrollDirection ? -1f : 1f;
 
-        // 🔹 CONSTANT SPEED (meters/sec → texture space)
-        float offset = (Time.time * scrollSpeed / arrowSize) * direction;
+        //  CONSTANT speed (meters/sec)
+        scrollOffset += (scrollSpeed / arrowSize) * Time.deltaTime * direction;
 
         runtimeMat.mainTextureOffset = rotateTexture90
-            ? new Vector2(0, offset)
-            : new Vector2(offset, 0);
+            ? new Vector2(0, scrollOffset)
+            : new Vector2(scrollOffset, 0);
     }
+
 
     void RenderPath(List<Waypoint> path)
     {
@@ -141,12 +148,13 @@ public class GuidedPathRenderer : MonoBehaviour
 
         cachedPathLength = Mathf.Max(0.01f, totalDist);
 
-        // 🔹 CONSTANT ARROW SIZE (no distance distortion)
-        float tileRepeat = cachedPathLength / arrowSize;
+        //  CONSTANT arrow size (world meters)
+        float tilesPerMeter = 1f / arrowSize;
 
         runtimeMat.mainTextureScale = rotateTexture90
-            ? new Vector2(1, tileRepeat)
-            : new Vector2(tileRepeat, 1);
+            ? new Vector2(1f, tilesPerMeter)
+            : new Vector2(tilesPerMeter, 1f);
+
 
         ApplyTextureOrientation();
         line.widthMultiplier = lineWidth;
