@@ -5697,7 +5697,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: Button
+  m_text: Test Path
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
   m_sharedMaterial: {fileID: 2180264, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
@@ -40818,8 +40818,8 @@ MonoBehaviour:
   pathfinder: {fileID: 2515263503707135049}
   exitWaypoint: {fileID: 2717106675189597471}
   lineYOffset: -0.33
-  lineWidth: 0.8
-  scrollSpeed: -1
+  lineWidth: 0.6
+  scrollSpeed: -2
   textureScale: 0.6
   invertScrollDirection: 0
   rotateTexture90: 0
