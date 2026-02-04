@@ -4,5 +4,7 @@ using UnityEngine;
 public class Waypoint : MonoBehaviour
 {
     public List<Waypoint> neighbors = new List<Waypoint>();
-    public bool blocked = false;
+    public bool blocked;
+
+    public bool isSecondary;
 }

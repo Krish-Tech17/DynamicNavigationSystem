@@ -4,6 +4,7 @@ using UnityEngine;
 public class WaypointPathfinder : MonoBehaviour  // This script finds the shortest possible route from the user’s nearest waypoint -> exit.
 {
     public List<Waypoint> allWaypoints = new List<Waypoint>();
+    public bool allowSecondaryWaypoints = false;
 
     public List<Waypoint> GetShortestPath(Waypoint start, Waypoint goal)
     {
@@ -33,17 +34,24 @@ public class WaypointPathfinder : MonoBehaviour  // This script finds the shorte
 
             foreach (var n in current.neighbors)
             {
-                //  IMPORTANT FIX: ignore neighbors not part of the valid graph
                 if (!allWaypoints.Contains(n)) continue;
                 if (n.blocked) continue;
 
-                float d = dist[current] + Vector3.Distance(current.transform.position, n.transform.position);
+                // 🔥 THIS IS THE RESTORED FIX
+                if (n.isSecondary && !allowSecondaryWaypoints) continue;
+
+                float d = dist[current] + Vector3.Distance(
+                    current.transform.position,
+                    n.transform.position
+                );
+
                 if (d < dist[n])
                 {
                     dist[n] = d;
                     prev[n] = current;
                 }
             }
+
         }
 
         var path = new List<Waypoint>();
