@@ -1,4 +1,5 @@
 ﻿using UnityEngine;
+using System.Collections;
 using System.Collections.Generic;
 
 [RequireComponent(typeof(LineRenderer))]
@@ -14,20 +15,17 @@ public class GuidedPathRenderer : MonoBehaviour
     public float lineWidth = 0.15f;
 
     [Header("Scrolling & Orientation")]
-    public float scrollSpeed = 2f;   // meters per second
-    public float textureScale = 1f;  // keep for tuning
+    public float scrollSpeed = 2f;
     public bool invertScrollDirection = false;
     public bool rotateTexture90 = false;
     public bool flipTextureHorizontal = false;
     public bool flipTextureVertical = false;
 
     [Header("Texture Scaling")]
-    [Tooltip("World size of one arrow (meters)")]
     public float arrowSize = 1f;
 
     private LineRenderer line;
     private Material runtimeMat;
-    private float cachedPathLength = 1f;
 
     public List<Waypoint> CurrentPath { get; private set; }
     public int CurrentNextIndex { get; private set; } = 0;
@@ -35,9 +33,15 @@ public class GuidedPathRenderer : MonoBehaviour
     public float DistancePublicref;
     public bool navigationActive = false;
 
-    public float recalcInterval = 4.0f;
-    private float recalcTimer = 0f;
     private Waypoint lastNearest;
+
+    [Header("Recalculation")]
+    public float nearestCheckInterval = 0.5f;
+    private float nearestTimer = 0f;
+
+    // ⭐ delay system
+    public float requestDelay = 0.4f;
+    private Coroutine pendingRequest;
 
     // ----------------------------
 
@@ -45,7 +49,9 @@ public class GuidedPathRenderer : MonoBehaviour
     {
         exitWaypoint = target;
         navigationActive = true;
-        RecalculatePath();
+
+        lastNearest = GetClosestWaypoint();
+        RequestRecalculation();
     }
 
     public void StopNavigation()
@@ -60,8 +66,6 @@ public class GuidedPathRenderer : MonoBehaviour
         line.useWorldSpace = true;
         line.alignment = LineAlignment.TransformZ;
         line.widthMultiplier = lineWidth;
-
-        //  CRITICAL
         line.textureMode = LineTextureMode.RepeatPerSegment;
 
         runtimeMat = Instantiate(line.material);
@@ -76,31 +80,49 @@ public class GuidedPathRenderer : MonoBehaviour
 
         UpdateScroll();
 
-        recalcTimer += Time.deltaTime;
-        Waypoint nearest = GetClosestWaypoint();
+        nearestTimer += Time.deltaTime;
 
-        if (nearest != lastNearest || recalcTimer > recalcInterval)
+        if (nearestTimer >= nearestCheckInterval)
         {
-            RecalculatePath();
-            lastNearest = nearest;
-            recalcTimer = 0f;
-            RenderPath(CurrentPath);
+            nearestTimer = 0f;
+
+            Waypoint nearest = GetClosestWaypoint();
+
+            if (nearest != lastNearest)
+            {
+                lastNearest = nearest;
+                RequestRecalculation();
+            }
         }
 
         AdvanceWaypointIfReached();
     }
 
-    public void RecalculatePath()
-    {
-        Waypoint nearest = GetClosestWaypoint();
-        if (nearest == null || exitWaypoint == null) return;
+    // ---------------------------- SMART REQUEST ----------------------------
 
-        CurrentPath = pathfinder.GetShortestPath(nearest, exitWaypoint);
-        CurrentNextIndex = 0;
+    void RequestRecalculation()
+    {
+        if (pendingRequest != null)
+            StopCoroutine(pendingRequest);
+
+        pendingRequest = StartCoroutine(DelayedRecalculation());
     }
 
-    // ---------------------------- FIXED PART ----------------------------
+    IEnumerator DelayedRecalculation()
+    {
+        yield return new WaitForSeconds(requestDelay);
 
+        if (!navigationActive || lastNearest == null || exitWaypoint == null)
+            yield break;
+
+        // heavy call but happens rarely now
+        CurrentPath = pathfinder.GetShortestPath(lastNearest, exitWaypoint);
+        CurrentNextIndex = 0;
+
+        RenderPath(CurrentPath);
+    }
+
+    // ----------------------------------------------------------------------
 
     private float scrollOffset = 0f;
 
@@ -109,15 +131,12 @@ public class GuidedPathRenderer : MonoBehaviour
         if (runtimeMat == null) return;
 
         float direction = invertScrollDirection ? -1f : 1f;
-
-        //  CONSTANT speed (meters/sec)
         scrollOffset += (scrollSpeed / arrowSize) * Time.deltaTime * direction;
 
         runtimeMat.mainTextureOffset = rotateTexture90
             ? new Vector2(0, scrollOffset)
             : new Vector2(scrollOffset, 0);
     }
-
 
     void RenderPath(List<Waypoint> path)
     {
@@ -146,21 +165,15 @@ public class GuidedPathRenderer : MonoBehaviour
             DistancePublicref = totalDist;
         }
 
-        cachedPathLength = Mathf.Max(0.01f, totalDist);
-
-        //  CONSTANT arrow size (world meters)
         float tilesPerMeter = 1f / arrowSize;
 
         runtimeMat.mainTextureScale = rotateTexture90
             ? new Vector2(1f, tilesPerMeter)
             : new Vector2(tilesPerMeter, 1f);
 
-
         ApplyTextureOrientation();
         line.widthMultiplier = lineWidth;
     }
-
-    // ----------------------------
 
     void ApplyTextureOrientation()
     {
@@ -217,6 +230,7 @@ public class GuidedPathRenderer : MonoBehaviour
 
     public void ForceRecalculate()
     {
-        CurrentPath = null;
+        lastNearest = GetClosestWaypoint();
+        RequestRecalculation();
     }
 }
