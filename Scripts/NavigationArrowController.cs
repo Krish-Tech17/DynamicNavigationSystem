@@ -23,6 +23,9 @@ public class NavigationArrowController : MonoBehaviour
 
     void HandleWrongDirection()
     {
+        if (renderer == null || !renderer.navigationActive)
+            return;
+
         arrow.gameObject.SetActive(true);
         UpdateArrowTarget();
     }
@@ -34,8 +37,18 @@ public class NavigationArrowController : MonoBehaviour
 
     void Update()
     {
+        // SAFE CHECK: if navigation stopped, always disable arrow
+        if (renderer == null || !renderer.navigationActive)
+        {
+            if (arrow.gameObject.activeSelf)
+                arrow.gameObject.SetActive(false);
+
+            return;
+        }
+
         if (!arrow.gameObject.activeSelf) return;
-        UpdateArrowTarget();  // VR cheap update
+
+        UpdateArrowTarget();
     }
 
     void UpdateArrowTarget()
